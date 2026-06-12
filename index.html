@@ -1,137 +1,61 @@
-<!DOCTYPE html>
-<html lang="ar">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TXM6</title>
-
-<style>
 *{
 margin:0;
 padding:0;
 box-sizing:border-box;
-font-family:Arial,sans-serif;
+font-family:sans-serif;
 }
 
 body{
-background:#f4f7fb;
-text-align:center;
+background:#f5f7fb;
+display:flex;
+flex-direction:column;
+align-items:center;
+min-height:100vh;
 }
 
 header{
 background:#2563eb;
+width:100%;
+padding:25px;
+text-align:center;
 color:white;
-padding:20px;
 }
 
-.upload-box{
-max-width:600px;
-margin:50px auto;
-background:white;
-padding:40px;
-border-radius:15px;
-box-shadow:0 0 20px rgba(0,0,0,.1);
+.upload-container{
+width:90%;
+max-width:700px;
+margin-top:50px;
 }
 
 .drop-zone{
+background:white;
 border:3px dashed #2563eb;
-padding:50px;
+padding:60px 20px;
+text-align:center;
 cursor:pointer;
-border-radius:10px;
+border-radius:15px;
+transition:.3s;
 }
 
 .drop-zone:hover{
 background:#eef4ff;
 }
 
-button{
+.progress-box{
 margin-top:20px;
-padding:12px 25px;
-background:#2563eb;
-color:white;
-border:none;
-border-radius:8px;
-cursor:pointer;
 }
 
-.progress{
+.progress-bar{
 width:100%;
 height:25px;
 background:#ddd;
 border-radius:20px;
 overflow:hidden;
-margin-top:20px;
 }
 
-.progress-bar{
-height:100%;
+.progress{
 width:0%;
+height:100%;
 background:#2563eb;
+transition:.3s;
 }
-</style>
-
-</head>
-<body>
-
-<header>
-<h1>TXM6</h1>
-<p>منصة رفع ومشاركة الملفات</p>
-</header>
-
-<div class="upload-box">
-
-<div class="drop-zone">
-📁 اسحب الملف هنا أو اضغط للاختيار
-</div>
-
-<input type="file" id="file" hidden>
-
-<button onclick="fakeUpload()">
-رفع الملف
-</button>
-
-<div class="progress">
-<div class="progress-bar" id="bar"></div>
-</div>
-
-<p id="status"></p>
-
-</div>
-
-<script>
-
-function fakeUpload(){
-
-let bar=document.getElementById("bar");
-
-let status=document.getElementById("status");
-
-let width=0;
-
-let interval=setInterval(()=>{
-
-if(width>=100){
-
-clearInterval(interval);
-
-status.innerHTML=
-'تم الرفع بنجاح<br><br>https://txm6.com/file/abc123';
-
-}else{
-
-width++;
-
-bar.style.width=width+"%";
-
-status.innerHTML=width+"%";
-
-}
-
-},50);
-
-}
-
-</script>
-
-</body>
-</html>
