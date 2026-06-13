@@ -1,0 +1,146 @@
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/router';
+import { useTheme } from 'next-themes';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  HomeIcon,
+  FolderIcon,
+  CloudArrowUpIcon,
+  ArrowPathIcon,
+  UserIcon,
+  Cog6ToothIcon,
+  ArrowRightOnRectangleIcon,
+  MoonIcon,
+  SunIcon,
+  Bars3Icon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
+
+const navigation = [
+  { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
+  { name: 'My Files', href: '/files', icon: FolderIcon },
+  { name: 'Upload', href: '/upload', icon: CloudArrowUpIcon },
+  { name: 'Activity', href: '/activity', icon: ArrowPathIcon },
+  { name: 'Profile', href: '/profile', icon: UserIcon },
+];
+
+export default function DashboardLayout({ children }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const router = useRouter();
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+    } else {
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      setUser(userData);
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    router.push('/login');
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
+      {/* Mobile sidebar */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 lg:hidden"
+          >
+            <div className="fixed inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
+            <motion.div
+              initial={{ x: -300 }}
+              animate={{ x: 0 }}
+              exit={{ x: -300 }}
+              className="fixed inset-y-0 left-0 w-64 bg-white dark:bg-dark-card shadow-xl"
+            >
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-8">
+                  <h1 className="text-2xl font-bold text-primary-600">TX-M6</h1>
+                  <button onClick={() => setSidebarOpen(false)}>
+                    <XMarkIcon className="w-6 h-6" />
+                  </button>
+                </div>
+                <nav className="space-y-1">
+                  {navigation.map((item) => (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={`flex items-center px-4 py-2 rounded-lg transition-all ${
+                        router.pathname === item.href
+                          ? 'bg-primary-600 text-white'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      <item.icon className="w-5 h-5 mr-3" />
+                      {item.name}
+                    </Link>
+                  ))}
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center px-4 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+                  >
+                    <ArrowRightOnRectangleIcon className="w-5 h-5 mr-3" />
+                    Logout
+                  </button>
+                </nav>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Desktop sidebar */}
+      <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
+        <div className="flex flex-col flex-grow bg-white dark:bg-dark-card shadow-lg">
+          <div className="p-4">
+            <h1 className="text-2xl font-bold text-primary-600">TX-M6</h1>
+          </div>
+          <nav className="flex-1 px-4 pb-4 space-y-1">
+            {navigation.map((item) => (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={`flex items-center px-4 py-2 rounded-lg transition-all ${
+                  router.pathname === item.href
+                    ? 'bg-primary-600 text-white'
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                }`}
+              >
+                <item.icon className="w-5 h-5 mr-3" />
+                {item.name}
+              </Link>
+            ))}
+          </nav>
+          <div className="p-4 border-t border-gray-200 dark:border-dark-border">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center px-4 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+            >
+              <ArrowRightOnRectangleIcon className="w-5 h-5 mr-3" />
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="lg:pl-64">
+        <header className="sticky top-0 z-40 bg-white dark:bg-dark-card shadow-sm">
+          <div className="flex items-center justify-between px-4 py-3">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 rounded-lg lg:hidden hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <Bars3
