@@ -1,0 +1,265 @@
+const express = require('express');
+const multer = require('multer');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { v4: uuidv4 } = require('uuid');
+const { pool } = require('../server');
+const { authenticateToken } = require('../middleware/auth');
+const sharp = require('sharp');
+
+const router = express.Router();
+
+// S3 Configuration (Cloudflare R2 compatible)
+const s3Client = new S3Client({
+    region: 'auto',
+    endpoint: process.env.R2_ENDPOINT,
+    credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+    }
+});
+
+// Multer configuration
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 10 * 1024 * 1024 * 1024 // 10GB max
+    }
+});
+
+// Upload file
+router.post('/upload', authenticateToken, upload.array('files', 50), async (req, res) => {
+    try {
+        const { folder_id } = req.body;
+        const files = req.files;
+        
+        if (!files || files.length === 0) {
+            return res.status(400).json({ error: 'No files uploaded' });
+        }
+
+        // Check user storage limit
+        const userResult = await pool.query(
+            'SELECT storage_used, storage_limit FROM users WHERE id = $1',
+            [req.user.id]
+        );
+        
+        const user = userResult.rows[0];
+        const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+        
+        if (user.storage_used + totalSize > user.storage_limit) {
+            return res.status(400).json({ error: 'Storage limit exceeded' });
+        }
+
+        const uploadedFiles = [];
+        
+        for (const file of files) {
+            const fileKey = `${req.user.id}/${uuidv4()}/${file.originalname}`;
+            
+            // Process image optimization
+            let fileBuffer = file.buffer;
+            let mimeType = file.mimetype;
+            
+            if (file.mimetype.startsWith('image/')) {
+                fileBuffer = await sharp(file.buffer)
+                    .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
+                    .toBuffer();
+            }
+            
+            // Upload to R2
+            const uploadParams = {
+                Bucket: process.env.R2_BUCKET_NAME,
+                Key: fileKey,
+                Body: fileBuffer,
+                ContentType: file.mimetype
+            };
+            
+            await s3Client.send(new PutObjectCommand(uploadParams));
+            
+            const fileUrl = `${process.env.CDN_URL}/${fileKey}`;
+            
+            // Save to database
+            const result = await pool.query(
+                `INSERT INTO files (user_id, file_name, original_name, file_size, file_type, mime_type, file_key, file_url, folder_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+                [req.user.id, fileKey, file.originalname, file.size, file.mimetype.split('/')[1], file.mimetype, fileKey, fileUrl, folder_id || null]
+            );
+            
+            uploadedFiles.push(result.rows[0]);
+            
+            // Update user storage
+            await pool.query(
+                'UPDATE users SET storage_used = storage_used + $1 WHERE id = $2',
+                [file.size, req.user.id]
+            );
+        }
+        
+        res.json({ files: uploadedFiles });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Upload failed' });
+    }
+});
+
+// Get user files
+router.get('/', authenticateToken, async (req, res) => {
+    try {
+        const { folder_id, search, sort_by = 'created_at', sort_order = 'DESC' } = req.query;
+        
+        let query = 'SELECT * FROM files WHERE user_id = $1';
+        let params = [req.user.id];
+        
+        if (folder_id) {
+            query += ' AND folder_id = $2';
+            params.push(folder_id);
+        } else if (folder_id === 'null') {
+            query += ' AND folder_id IS NULL';
+        }
+        
+        if (search) {
+            query += ` AND (original_name ILIKE $${params.length + 1})`;
+            params.push(`%${search}%`);
+        }
+        
+        const validSortColumns = ['created_at', 'file_size', 'original_name'];
+        const sortColumn = validSortColumns.includes(sort_by) ? sort_by : 'created_at';
+        const order = sort_order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        
+        query += ` ORDER BY ${sortColumn} ${order}`;
+        
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to fetch files' });
+    }
+});
+
+// Delete file
+router.delete('/:id', authenticateToken, async (req, res) => {
+    try {
+        const fileResult = await pool.query(
+            'SELECT * FROM files WHERE id = $1 AND user_id = $2',
+            [req.params.id, req.user.id]
+        );
+        
+        if (fileResult.rows.length === 0) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+        
+        const file = fileResult.rows[0];
+        
+        // Delete from R2
+        const deleteParams = {
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: file.file_key
+        };
+        
+        await s3Client.send(new DeleteObjectCommand(deleteParams));
+        
+        // Delete from database
+        await pool.query('DELETE FROM files WHERE id = $1', [req.params.id]);
+        
+        // Update user storage
+        await pool.query(
+            'UPDATE users SET storage_used = storage_used - $1 WHERE id = $2',
+            [file.file_size, req.user.id]
+        );
+        
+        res.json({ message: 'File deleted successfully' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to delete file' });
+    }
+});
+
+// Create share link
+router.post('/:id/share', authenticateToken, async (req, res) => {
+    try {
+        const { password, expires_in_days, max_downloads } = req.body;
+        const fileId = req.params.id;
+        
+        const fileResult = await pool.query(
+            'SELECT * FROM files WHERE id = $1 AND user_id = $2',
+            [fileId, req.user.id]
+        );
+        
+        if (fileResult.rows.length === 0) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+        
+        const shareToken = uuidv4();
+        let passwordHash = null;
+        
+        if (password) {
+            const bcrypt = require('bcryptjs');
+            passwordHash = await bcrypt.hash(password, 10);
+        }
+        
+        let expiresAt = null;
+        if (expires_in_days) {
+            expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + expires_in_days);
+        }
+        
+        const result = await pool.query(
+            `INSERT INTO share_links (file_id, share_token, password_hash, expires_at, max_downloads)
+             VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+            [fileId, shareToken, passwordHash, expiresAt, max_downloads]
+        );
+        
+        const shareUrl = `${process.env.FRONTEND_URL}/download/${shareToken}`;
+        
+        res.json({
+            share_url: shareUrl,
+            share_token: shareToken,
+            ...result.rows[0]
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to create share link' });
+    }
+});
+
+// Create folder
+router.post('/folders', authenticateToken, async (req, res) => {
+    try {
+        const { folder_name, parent_id } = req.body;
+        
+        const result = await pool.query(
+            `INSERT INTO folders (user_id, folder_name, parent_id)
+             VALUES ($1, $2, $3) RETURNING *`,
+            [req.user.id, folder_name, parent_id || null]
+        );
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to create folder' });
+    }
+});
+
+// Get folders
+router.get('/folders', authenticateToken, async (req, res) => {
+    try {
+        const { parent_id } = req.query;
+        
+        let query = 'SELECT * FROM folders WHERE user_id = $1';
+        let params = [req.user.id];
+        
+        if (parent_id) {
+            query += ' AND parent_id = $2';
+            params.push(parent_id);
+        } else if (parent_id === 'null') {
+            query += ' AND parent_id IS NULL';
+        }
+        
+        query += ' ORDER BY folder_name';
+        
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to fetch folders' });
+    }
+});
+
+module.exports = router;
