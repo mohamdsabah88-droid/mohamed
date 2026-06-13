@@ -1,0 +1,37 @@
+{
+  "name": "tx-m6-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "13.4.5",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "axios": "^1.4.0",
+    "framer-motion": "^10.12.16",
+    "tailwindcss": "^3.3.2",
+    "@heroicons/react": "^2.0.18",
+    "react-dropzone": "^14.2.3",
+    "react-hook-form": "^7.45.2",
+    "react-query": "^3.39.3",
+    "react-hot-toast": "^2.4.1",
+    "react-qr-code": "^2.0.11",
+    "date-fns": "^2.30.0",
+    "bytes": "^3.1.2",
+    "next-auth": "^4.22.1",
+    "next-pwa": "^5.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.3.1",
+    "@types/react": "18.2.13",
+    "@types/react-dom": "18.2.6",
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.24",
+    "typescript": "^5.1.3"
+  }
+}
